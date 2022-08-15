@@ -1,6 +1,8 @@
 #Automatische installatie van Guacamole 
 #Dependencies installeren die nodig zijn voor onze Guacamole te maken
-
+- name: Install guacamole 
+  hosts: guacamole
+  tasks:
     - name: install dependencies
       apt:
         update_cache: yes
@@ -22,14 +24,16 @@
     - name: Download guacamole-server-1.4.0.tar.gz
       get_url:
         url: https://downloads.apache.org/guacamole/1.4.0/source/guacamole-server-1.4.0.tar.gz
-        dest: /home/flor/Desktop/
+        dest: /home/fvanhaecke/Desktop/
+        force_basic_auth: yes
+      become: true
 
 #Extracten van de net gedownloade tar.gz file
 
     - name: Extract guacamole-server-1.4.0.tar.gz
       ansible.builtin.unarchive:
-        src: /home/flor/Desktop/guacamole-server-1.4.0.tar.gz
-        dest: /home/flor/Desktop/
+        src: /home/fvanhaecke/Desktop/guacamole-server-1.4.0.tar.gz
+        dest: /home/fvanhaecke/Desktop/
         remote_src: yes
       become: true
 
@@ -37,7 +41,7 @@
 
     - name: run configure script
       ansible.builtin.shell:
-        chdir: /home/flor/Desktop/guacamole-server-1.4.0
+        chdir: /home/fvanhaecke/Desktop/guacamole-server-1.4.0
         cmd: ./configure --with-init-dir=/etc/init.d
       become: true  
 
@@ -45,6 +49,7 @@
 
     - name: make
       ansible.builtin.shell:
+        chdir: /home/fvanhaecke/Desktop/guacamole-server-1.4.0
         cmd: make
       become: true  
 
@@ -52,6 +57,7 @@
 
     - name: make install
       ansible.builtin.shell:
+        chdir: /home/fvanhaecke/Desktop/guacamole-server-1.4.0
         cmd: make install
       become: true  
 
@@ -61,19 +67,19 @@
     - name: Download guacamole-1.4.0.war
       get_url:
         url: https://apache.org/dyn/closer.lua/guacamole/1.4.0/binary/guacamole-1.4.0.war?action=download
-        dest: /home/flor/Desktop/
+        dest: /home/fvanhaecke/Desktop/
       become: true
 
 #Installatie van java
 
     - name: installing java
       apt:
-        name: openjdk-17-jdk -y
+        name: openjdk-17-jdk
         state: present
       become: true
 
 #user toevoegen voor Apache Tomcat.
-
+#even comment maken omdat ik error krijg dat deze al bestaat
     - name: create tomcat user
       ansible.builtin.shell:
         cmd: useradd -m -U -d /opt/tomcat -s /bin/false tomcat
@@ -84,7 +90,7 @@
     - name: Download Apache Tomcat
       get_url:
         url: https://dlcdn.apache.org/tomcat/tomcat-9/v9.0.65/bin/apache-tomcat-9.0.65.tar.gz
-        dest: /home/flor/Desktop/
+        dest: /home/fvanhaecke/Desktop/
       become: true
 
 #Aanmaken van /opt/tomcat Directory
@@ -99,7 +105,7 @@
 
     - name: Extract tomcat - 9.0.65.tar.gz
       ansible.builtin.unarchive:
-        src: /home/flor/Desktop/apache-tomcat-9.0.65.tar
+        src: /home/fvanhaecke/Desktop/apache-tomcat-9.0.65.tar.gz
         dest: /opt/tomcat
         remote_src: yes
       become: true
@@ -109,15 +115,14 @@
     - name: rename tomcatapps
       ansible.builtin.shell:
         chdir: /opt/tomcat
-        cmd: mv apache-tomcat-9.0.65/ tomcatapp
+        cmd: mv apache-tomcat-9.0.65 tomcatapp
       become: true
 
 #Ownership wijzigen van /opt/tomcat
 
     - name: change ownership from /opt/tomcat
       ansible.builtin.shell:
-        cmd: |
-        chown -R tomcat: /opt/tomcat
+        cmd: "chown -R tomcat: /opt/tomcat"
       become: true
 
 #Scripts in /opt/tomcat/tomcatapp uitvoerbaar maken
@@ -125,8 +130,9 @@
     - name: make scripts executable
       ansible.builtin.shell:
         cmd: | 
-        chown -R tomcat: find /opt/tomcat/tomcatapp/bin/ -type f -iname "*.sh" -exec chmod +x {} \;
+          find /opt/tomcat/tomcatapp/bin/ -type f -iname "*.sh" -exec chmod +x {} \;
       become: true
+      
 
 #Tomcat.service file aanmaken met ansible.file
 
@@ -170,16 +176,20 @@
 #Reloaden van daemons
 
     - name: daemon-reload
-      ansible.builtin.systemd:
-        daemon_reload: yes
-
+      ansible.builtin.shell:
+        cmd: systemctl daemon-reload
+      become: true
+      
 #starten en enablen van tomcat.service
 
-    - name: Enable tomcat.service
-      ansible.builtin.systemd:
-        name: tomcat.service
-        state: started
-        enabled: yes
+    - name: start tomcat.service
+      ansible.builtin.shell:
+        cmd: systemctl start tomcat.service
+      become: true
+
+    - name: enable tomcat.service
+      ansible.builtin.shell:
+        cmd: systemctl enable tomcat.service
       become: true
 
 #enable ufw 8080/tcp
@@ -201,15 +211,15 @@
 
     - name: move guacamole.war
       ansible.builtin.shell:
-        chdir: /home/flor/Desktop/
-        cmd: mv guacamole.war?action=download /etc/guacamole/guacamole.war
+        chdir: /home/fvanhaecke/Desktop/
+        cmd: mv guacamole-1.4.0.war /etc/guacamole/guacamole.war
       become: true
 
 #Symlink aanmaken van guacamole client naar tomcat webapps directory
 
     - name: create symlink 
       ansible.builtin.shell:
-        chdir: /home/flor/Desktop/
+        chdir: /home/fvanhaecke/Desktop/
         cmd: ln -s /etc/guacamole/guacamole.war /opt/tomcat/tomcatapp/webapps/
       become: true
 
@@ -217,10 +227,10 @@
 
     - name: create symlink 
       ansible.builtin.shell:
-        chdir: /home/flor/Desktop/
+        chdir: /home/fvanhaecke/Desktop/
         cmd: |
-        echo "GUACAMOLE_HOME=/etc/guacamole" | sudo tee -a /etc/default/tomcat
-        echo "export GUACAMOLE_HOME=/etc/guacamole" | sudo tee -a /etc/profile
+         echo "GUACAMOLE_HOME=/etc/guacamole" | sudo tee -a /etc/default/tomcat
+         echo "export GUACAMOLE_HOME=/etc/guacamole" | sudo tee -a /etc/profile
       become: true
 
 # Create guacamole config file
@@ -236,7 +246,7 @@
     - name: edit tomcat.service
       blockinfile:
         block: |
-         guacd-hostname: localhost
+         guacd-hostname: 127.0.0.1
          guacd-port:     4822
          user-mapping:
          /etc/guacamole/user-mapping.xml
@@ -253,7 +263,6 @@
       become: true
 
 #Nodige informatie schrijven naar user-mapping.xml
-
 
 
     - name: edit tomcat.service
@@ -273,24 +282,61 @@
                      encoding="md5">
 
                  <!-- First authorized Remote connection -->
-                 <connection name="RHEL 7 Maipo">
+                 <connection name="Ubuntu 22.04LTS">
                      <protocol>ssh</protocol>
-                     <param name="hostname">172.25.169.26</param>
+                     <param name="hostname">203.0.113.2</param>
                      <param name="port">22</param>
                  </connection>
 
-                 <!-- Second authorized remote connection -->
-                 <connection name="Windows Server 2019">
-                     <protocol>rdp</protocol>
-                     <param name="hostname">10.10.10.5</param>
-                     <param name="port">3389</param>
-                     <param name="username">tech</param>
-                     <param name="ignore-cert">true</param>
-                 </connection>
 
              </authorize>
 
              <!-- SECOND USER -->
+             <authorize 
+                     username="Nico"
+                     password="68eacb97d86f0c4621fa2b0e17cabd8c"
+                     encoding="md5">
+
+                 <!-- First authorized Remote connection -->
+                 <connection name="Ubuntu 22.04LTS">
+                     <protocol>ssh</protocol>
+                     <param name="hostname">203.0.113.2</param>
+                     <param name="port">22</param>
+                 </connection>
+
+             </authorize>
+
+             <!-- THIRD USER -->
+             <authorize 
+                     username="Klaas"
+                     password="68eacb97d86f0c4621fa2b0e17cabd8c"
+                     encoding="md5">
+
+                 <!-- First authorized Remote connection -->
+                 <connection name="Ubuntu 22.04LTS">
+                     <protocol>ssh</protocol>
+                     <param name="hostname">203.0.113.2</param>
+                     <param name="port">22</param>
+                 </connection>
+
+             </authorize>
+
+             <!-- FOURTH USER -->
+             <authorize 
+                     username="Yoshua"
+                     password="68eacb97d86f0c4621fa2b0e17cabd8c"
+                     encoding="md5">
+
+                 <!-- First authorized Remote connection -->
+                 <connection name="Ubuntu 22.04LTS">
+                     <protocol>ssh</protocol>
+                     <param name="hostname">203.0.113.2</param>
+                     <param name="port">22</param>
+                 </connection>
+
+             </authorize>
+
+             <!-- FIFTH USER -->
 
              <authorize 
                      username="pieterjan"
@@ -298,18 +344,65 @@
                      encoding="md5">
 
 
-                 <!-- First authorized remote connection -->
-                 <connection name="Windows Server 2019">
-                     <protocol>rdp</protocol>
-                     <param name="hostname">10.10.10.5</param>
-                     <param name="port">3389</param>
-                     <param name="username">tech</param>
-                     <param name="ignore-cert">true</param>
                  </connection>
                  <!-- Second authorized Remote connection -->
-                 <connection name="RHEL 7 Maipo">
+                 <connection name="Ubuntu 22.04LTS 2">
                      <protocol>ssh</protocol>
-                     <param name="hostname">172.25.169.26</param>
+                     <param name="hostname">203.0.113.3</param>
+                     <param name="port">22</param>
+                 </connection>
+
+             </authorize>
+             
+             <!-- SIXTH USER -->
+
+             <authorize 
+                     username="Karel"
+                     password="68eacb97d86f0c4621fa2b0e17cabd8c"
+                     encoding="md5">
+
+
+                 </connection>
+                 <!-- Second authorized Remote connection -->
+                 <connection name="Ubuntu 22.04LTS 2">
+                     <protocol>ssh</protocol>
+                     <param name="hostname">203.0.113.3</param>
+                     <param name="port">22</param>
+                 </connection>
+
+             </authorize>
+             
+             <!-- SEVENTH USER -->
+
+             <authorize 
+                     username="Joeri"
+                     password="68eacb97d86f0c4621fa2b0e17cabd8c"
+                     encoding="md5">
+
+
+                 </connection>
+                 <!-- Second authorized Remote connection -->
+                 <connection name="Ubuntu 22.04LTS 2">
+                     <protocol>ssh</protocol>
+                     <param name="hostname">203.0.113.3</param>
+                     <param name="port">22</param>
+                 </connection>
+
+             </authorize>             
+             
+             <!-- EIGHT USER -->
+
+             <authorize 
+                     username="Hans"
+                     password="68eacb97d86f0c4621fa2b0e17cabd8c"
+                     encoding="md5">
+
+
+                 </connection>
+                 <!-- Second authorized Remote connection -->
+                 <connection name="Ubuntu 22.04LTS 2">
+                     <protocol>ssh</protocol>
+                     <param name="hostname">203.0.113.3</param>
                      <param name="port">22</param>
                  </connection>
 
@@ -318,3 +411,18 @@
          </user-mapping>
         dest: /etc/guacamole/user-mapping.xml
       become: true 
+
+#LDCONFIG
+
+    - name: ldconfig
+      ansible.builtin.shell:
+        cmd: ldconfig
+      become: true
+
+#restart tomcat & guacd
+
+    - name: restart tomcat & guacd
+      ansible.builtin.shell:
+        chdir: /home/fvanhaecke/Desktop/
+        cmd: systemctl restart tomcat guacd
+      become: true
