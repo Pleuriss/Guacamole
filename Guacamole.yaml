@@ -1,0 +1,320 @@
+#Automatische installatie van Guacamole 
+#Dependencies installeren die nodig zijn voor onze Guacamole te maken
+
+    - name: install dependencies
+      apt:
+        update_cache: yes
+        name: 
+          - libcairo2-dev
+          - libjpeg-turbo8-dev
+          - libpng-dev
+          - libtool-bin
+          - uuid-dev
+          - freerdp2-dev
+          - libpango1.0-dev
+          - libssh2-1-dev
+          - libssl-dev
+        state: present
+      become: true
+
+#Ophalen van de source code voor guacamole
+
+    - name: Download guacamole-server-1.4.0.tar.gz
+      get_url:
+        url: https://downloads.apache.org/guacamole/1.4.0/source/guacamole-server-1.4.0.tar.gz
+        dest: /home/flor/Desktop/
+
+#Extracten van de net gedownloade tar.gz file
+
+    - name: Extract guacamole-server-1.4.0.tar.gz
+      ansible.builtin.unarchive:
+        src: /home/flor/Desktop/guacamole-server-1.4.0.tar.gz
+        dest: /home/flor/Desktop/
+        remote_src: yes
+      become: true
+
+#Runnen van het configure script.
+
+    - name: run configure script
+      ansible.builtin.shell:
+        chdir: /home/flor/Desktop/guacamole-server-1.4.0
+        cmd: ./configure --with-init-dir=/etc/init.d
+      become: true  
+
+#uitvoeren van commando "make" om de server te compilen
+
+    - name: make
+      ansible.builtin.shell:
+        cmd: make
+      become: true  
+
+#uitvoeren van make install
+
+    - name: make install
+      ansible.builtin.shell:
+        cmd: make install
+      become: true  
+
+#Guacamole Client
+#Guacamole client.war file afhalen.
+
+    - name: Download guacamole-1.4.0.war
+      get_url:
+        url: https://apache.org/dyn/closer.lua/guacamole/1.4.0/binary/guacamole-1.4.0.war?action=download
+        dest: /home/flor/Desktop/
+      become: true
+
+#Installatie van java
+
+    - name: installing java
+      apt:
+        name: openjdk-17-jdk -y
+        state: present
+      become: true
+
+#user toevoegen voor Apache Tomcat.
+
+    - name: create tomcat user
+      ansible.builtin.shell:
+        cmd: useradd -m -U -d /opt/tomcat -s /bin/false tomcat
+      become: true
+  
+#Downloaden van Apache Tomcat
+
+    - name: Download Apache Tomcat
+      get_url:
+        url: https://dlcdn.apache.org/tomcat/tomcat-9/v9.0.65/bin/apache-tomcat-9.0.65.tar.gz
+        dest: /home/flor/Desktop/
+      become: true
+
+#Aanmaken van /opt/tomcat Directory
+
+    - name: Create /opt/tomcat directory
+      file:
+        path: /opt/tomcat
+        state: directory
+      become: true
+
+#Unzippen van tomcat.tar naar /opt/tomcat
+
+    - name: Extract tomcat - 9.0.65.tar.gz
+      ansible.builtin.unarchive:
+        src: /home/flor/Desktop/apache-tomcat-9.0.65.tar
+        dest: /opt/tomcat
+        remote_src: yes
+      become: true
+
+#hernoemen van /opt/tomcat/apache-tomcat-9.0.65 naar tomcatapp
+
+    - name: rename tomcatapps
+      ansible.builtin.shell:
+        chdir: /opt/tomcat
+        cmd: mv apache-tomcat-9.0.65/ tomcatapp
+      become: true
+
+#Ownership wijzigen van /opt/tomcat
+
+    - name: change ownership from /opt/tomcat
+      ansible.builtin.shell:
+        cmd: |
+        chown -R tomcat: /opt/tomcat
+      become: true
+
+#Scripts in /opt/tomcat/tomcatapp uitvoerbaar maken
+
+    - name: make scripts executable
+      ansible.builtin.shell:
+        cmd: | 
+        chown -R tomcat: find /opt/tomcat/tomcatapp/bin/ -type f -iname "*.sh" -exec chmod +x {} \;
+      become: true
+
+#Tomcat.service file aanmaken met ansible.file
+
+    - name: Touch tomcat.service
+      ansible.builtin.file:
+        path: /etc/systemd/system/tomcat.service
+        state: touch
+      become: true
+
+#Nodige informatie in tomcat.service plaatsen
+
+    - name: edit tomcat.service
+      blockinfile:
+        block: |
+         [Unit]
+         Description=Tomcat 9 servlet container
+         After=network.target
+
+         [Service]
+         Type=forking
+
+         User=tomcat
+         Group=tomcat
+
+         Environment="JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64"
+         Environment="JAVA_OPTS=-Djava.security.egd=file:///dev/urandom -Djava.awt.headless=true"
+
+         Environment="CATALINA_BASE=/opt/tomcat/tomcatapp"
+         Environment="CATALINA_HOME=/opt/tomcat/tomcatapp"
+         Environment="CATALINA_PID=/opt/tomcat/tomcatapp/temp/tomcat.pid"
+         Environment="CATALINA_OPTS=-Xms512M -Xmx1024M -server -XX:+UseParallelGC"
+
+         ExecStart=/opt/tomcat/tomcatapp/bin/startup.sh
+         ExecStop=/opt/tomcat/tomcatapp/bin/shutdown.sh
+
+         [Install]
+         WantedBy=multi-user.target
+        dest: /etc/systemd/system/tomcat.service
+      become: true 
+
+#Reloaden van daemons
+
+    - name: daemon-reload
+      ansible.builtin.systemd:
+        daemon_reload: yes
+
+#starten en enablen van tomcat.service
+
+    - name: Enable tomcat.service
+      ansible.builtin.systemd:
+        name: tomcat.service
+        state: started
+        enabled: yes
+      become: true
+
+#enable ufw 8080/tcp
+
+    - name: allow ufw
+      ansible.builtin.shell:
+        cmd: ufw allow 8080/tcp
+      become: true
+
+#Aanmaken van /etc/guacamole directory
+
+    - name: Create etc/guacamole
+      file:
+        path: /etc/guacamole
+        state: directory
+      become: true
+
+#verplaatsen van guacamole.war naar /etc/guacamole
+
+    - name: move guacamole.war
+      ansible.builtin.shell:
+        chdir: /home/flor/Desktop/
+        cmd: mv guacamole.war?action=download /etc/guacamole/guacamole.war
+      become: true
+
+#Symlink aanmaken van guacamole client naar tomcat webapps directory
+
+    - name: create symlink 
+      ansible.builtin.shell:
+        chdir: /home/flor/Desktop/
+        cmd: ln -s /etc/guacamole/guacamole.war /opt/tomcat/tomcatapp/webapps/
+      become: true
+
+# Create GUACAMOLE_HOME environment variabel
+
+    - name: create symlink 
+      ansible.builtin.shell:
+        chdir: /home/flor/Desktop/
+        cmd: |
+        echo "GUACAMOLE_HOME=/etc/guacamole" | sudo tee -a /etc/default/tomcat
+        echo "export GUACAMOLE_HOME=/etc/guacamole" | sudo tee -a /etc/profile
+      become: true
+
+# Create guacamole config file
+
+    - name: Touch guacamole.properties
+      ansible.builtin.file:
+        path: /etc/guacamole/guacamole.properties
+        state: touch
+      become: true
+
+#configuratiefile aanvullen
+
+    - name: edit tomcat.service
+      blockinfile:
+        block: |
+         guacd-hostname: localhost
+         guacd-port:     4822
+         user-mapping:
+         /etc/guacamole/user-mapping.xml
+         auth-provider:   net.sourceforge.guacamole.net.basic.BasicFileAuthenticationProvider
+        dest: /etc/guacamole/guacamole.properties
+      become: true 
+
+#aanmaken van user-mapping.xml
+
+    - name: Touch user-mapping.xml
+      ansible.builtin.file:
+        path: /etc/guacamole/user-mapping.xml
+        state: touch
+      become: true
+
+#Nodige informatie schrijven naar user-mapping.xml
+
+
+
+    - name: edit tomcat.service
+      blockinfile:
+        block: |
+         <user-mapping>
+
+             <!-- Per-user authentication and config information -->
+
+             <!-- A user using md5 to hash the password
+                  guacadmin user and its md5 hashed password below is used to 
+                      login to Guacamole Web UI-->
+             <!-- FIRST USER -->
+             <authorize 
+                     username="fvanhaecke"
+                     password="68eacb97d86f0c4621fa2b0e17cabd8c"
+                     encoding="md5">
+
+                 <!-- First authorized Remote connection -->
+                 <connection name="RHEL 7 Maipo">
+                     <protocol>ssh</protocol>
+                     <param name="hostname">172.25.169.26</param>
+                     <param name="port">22</param>
+                 </connection>
+
+                 <!-- Second authorized remote connection -->
+                 <connection name="Windows Server 2019">
+                     <protocol>rdp</protocol>
+                     <param name="hostname">10.10.10.5</param>
+                     <param name="port">3389</param>
+                     <param name="username">tech</param>
+                     <param name="ignore-cert">true</param>
+                 </connection>
+
+             </authorize>
+
+             <!-- SECOND USER -->
+
+             <authorize 
+                     username="pieterjan"
+                     password="68eacb97d86f0c4621fa2b0e17cabd8c"
+                     encoding="md5">
+
+
+                 <!-- First authorized remote connection -->
+                 <connection name="Windows Server 2019">
+                     <protocol>rdp</protocol>
+                     <param name="hostname">10.10.10.5</param>
+                     <param name="port">3389</param>
+                     <param name="username">tech</param>
+                     <param name="ignore-cert">true</param>
+                 </connection>
+                 <!-- Second authorized Remote connection -->
+                 <connection name="RHEL 7 Maipo">
+                     <protocol>ssh</protocol>
+                     <param name="hostname">172.25.169.26</param>
+                     <param name="port">22</param>
+                 </connection>
+
+             </authorize>
+
+         </user-mapping>
+        dest: /etc/guacamole/user-mapping.xml
+      become: true 
